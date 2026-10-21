@@ -1,0 +1,6 @@
+{
+  "name": "Box Breathing",
+  "description": "A calming, responsive Box Breathing web app with guided 4-phase visualizer, customizable levels, and accurate session tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
