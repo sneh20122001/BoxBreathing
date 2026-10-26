@@ -18,6 +18,8 @@ interface HeaderProps {
   ambientVolume: number;
   onChangeAmbientVolume: (vol: number) => void;
   isAmbientPlaying: boolean;
+  is3DMode?: boolean;
+  onToggle3DMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,6 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
   ambientVolume,
   onChangeAmbientVolume,
   isAmbientPlaying,
+  is3DMode = false,
+  onToggle3DMode,
 }) => {
   return (
     <header className="w-full border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md sticky top-0 z-30">
@@ -140,6 +144,24 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 text-cyan-400 shrink-0" aria-hidden="true" />
               <span className="hidden xl:inline">Insights</span>
+            </button>
+          )}
+
+          {/* 3D Sanctuary Mode Toggle Button */}
+          {onToggle3DMode && (
+            <button
+              type="button"
+              onClick={onToggle3DMode}
+              aria-label={is3DMode ? 'Return to 2D Dashboard' : 'Open Immersive Three.js 3D Breath Sanctuary'}
+              title={is3DMode ? 'Return to 2D Dashboard' : 'Enter 3D Breath Sanctuary'}
+              className={`min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                is3DMode
+                  ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-[0_0_15px_rgba(45,212,191,0.4)]'
+                  : 'bg-gradient-to-r from-teal-500/20 via-cyan-500/20 to-indigo-500/20 hover:from-teal-500/30 hover:to-indigo-500/30 border-teal-500/40 text-teal-200 hover:text-white hover:border-teal-400'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-teal-300 shrink-0" aria-hidden="true" />
+              <span>{is3DMode ? '2D View' : '✨ 3D Sanctuary'}</span>
             </button>
           )}
         </div>

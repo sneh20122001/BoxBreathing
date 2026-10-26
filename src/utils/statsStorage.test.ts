@@ -9,6 +9,10 @@ import {
   calculateAllTimeStats,
   calculateStreak,
   formatMinutesDisplay,
+  applySessionNote,
+  buildHistoryBackupPayload,
+  generateBackupFilename,
+  downloadHistoryJson,
 } from './statsStorage';
 import { SessionRecord } from '../types/stats';
 
@@ -183,3 +187,126 @@ test('formatMinutesDisplay outputs readable strings', () => {
   assert.equal(formatMinutesDisplay(150), '2m 30s');
   assert.equal(formatMinutesDisplay(300), '5m');
 });
+
+test('applySessionNote attaches a new reflection note to the target session', () => {
+  const sessions: SessionRecord[] = [
+    {
+      id: 'sess-1',
+      timestamp: 1000,
+      completedRounds: 5,
+      durationSeconds: 100,
+      levelId: 1,
+      levelName: 'Level 1',
+      secondsPerPhase: 5,
+    },
+    {
+      id: 'sess-2',
+      timestamp: 2000,
+      completedRounds: 4,
+      durationSeconds: 80,
+      levelId: 1,
+      levelName: 'Level 1',
+      secondsPerPhase: 5,
+    },
+  ];
+
+  const updated = applySessionNote(sessions, 'sess-1', 'Calm and centered');
+  assert.equal(updated.length, 2);
+  assert.equal(updated[0].note, 'Calm and centered');
+  assert.equal(updated[1].note, undefined);
+});
+
+test('applySessionNote updates existing reflection and trims whitespace', () => {
+  const sessions: SessionRecord[] = [
+    {
+      id: 'sess-1',
+      timestamp: 1000,
+      completedRounds: 5,
+      durationSeconds: 100,
+      levelId: 1,
+      levelName: 'Level 1',
+      secondsPerPhase: 5,
+      note: 'Old note',
+    },
+  ];
+
+  const updated = applySessionNote(sessions, 'sess-1', '  New reflection  ');
+  assert.equal(updated[0].note, 'New reflection');
+});
+
+test('applySessionNote removes note when empty string or whitespace is given', () => {
+  const sessions: SessionRecord[] = [
+    {
+      id: 'sess-1',
+      timestamp: 1000,
+      completedRounds: 5,
+      durationSeconds: 100,
+      levelId: 1,
+      levelName: 'Level 1',
+      secondsPerPhase: 5,
+      note: 'To be cleared',
+    },
+  ];
+
+  const updated = applySessionNote(sessions, 'sess-1', '   ');
+  assert.equal(updated[0].note, undefined);
+});
+
+test('buildHistoryBackupPayload builds structured portable backup payload with accurate totals', () => {
+  const exportDate = new Date(2026, 9, 23, 10, 30, 0);
+  const sampleSessions: SessionRecord[] = [
+    {
+      id: 's-1',
+      timestamp: 1698000000000,
+      completedRounds: 5,
+      durationSeconds: 100,
+      levelId: 1,
+      levelName: 'Level 1 (5s)',
+      secondsPerPhase: 5,
+      note: 'Deeply relaxed',
+    },
+    {
+      id: 's-2',
+      timestamp: 1698003600000,
+      completedRounds: 3,
+      durationSeconds: 84,
+      levelId: 2,
+      levelName: 'Level 2 (7s)',
+      secondsPerPhase: 7,
+    },
+  ];
+
+  const payload = buildHistoryBackupPayload(sampleSessions, exportDate);
+  assert.equal(payload.version, 1);
+  assert.equal(payload.appName, 'Box Breathing & Mindful Cadence');
+  assert.equal(payload.exportedAt, exportDate.toISOString());
+  assert.equal(payload.totalSessions, 2);
+  assert.equal(payload.totalRounds, 8);
+  assert.equal(payload.totalDurationSeconds, 184);
+  assert.equal(payload.totalMindfulMinutes, 3.1); // 184 / 60 = 3.066 -> 3.1
+  assert.equal(payload.sessions.length, 2);
+  assert.equal(payload.sessions[0].note, 'Deeply relaxed');
+});
+
+test('buildHistoryBackupPayload handles empty history array gracefully', () => {
+  const exportDate = new Date(2026, 9, 23);
+  const payload = buildHistoryBackupPayload([], exportDate);
+
+  assert.equal(payload.totalSessions, 0);
+  assert.equal(payload.totalRounds, 0);
+  assert.equal(payload.totalDurationSeconds, 0);
+  assert.equal(payload.totalMindfulMinutes, 0);
+  assert.deepEqual(payload.sessions, []);
+});
+
+test('generateBackupFilename generates clean date-stamped filename', () => {
+  const testDate = new Date(2026, 9, 23); // Oct 23, 2026
+  const filename = generateBackupFilename(testDate);
+  assert.equal(filename, 'mindful-breath-history-2026-10-23.json');
+});
+
+test('downloadHistoryJson returns false when window document is undefined in node', () => {
+  const result = downloadHistoryJson([]);
+  assert.equal(result, false);
+});
+

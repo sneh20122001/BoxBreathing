@@ -16,6 +16,7 @@ import {
   saveHistoryRecord,
   clearStoredHistory,
   generateSampleHistory,
+  updateSessionNote,
   STATS_STORAGE_KEY,
 } from './utils/statsStorage';
 import { Header } from './components/Header';
@@ -28,6 +29,8 @@ import { Insights } from './components/Insights';
 import { Instructions } from './components/Instructions';
 import { CompletionModal } from './components/CompletionModal';
 import { SafetyModal, SafetyBanner } from './components/SafetyDisclaimer';
+import { ThreeBreathingSanctuary } from './components/ThreeBreathingSanctuary';
+import { Sparkles } from 'lucide-react';
 
 export default function App() {
   const [selectedLevel, setSelectedLevel] = useState<LevelConfig>(BREATHING_LEVELS[0]);
@@ -36,6 +39,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isSafetyOpen, setIsSafetyOpen] = useState<boolean>(false);
   const [showCompletionModal, setShowCompletionModal] = useState<boolean>(false);
+  const [is3DMode, setIs3DMode] = useState<boolean>(false);
 
   // Theme state
   const [themeId, setThemeId] = useState<ThemeId>(() => {
@@ -123,12 +127,14 @@ export default function App() {
   const [history, setHistory] = useState<SessionRecord[]>(() => {
     return getStoredHistory();
   });
+  const [completedSessionId, setCompletedSessionId] = useState<string | null>(null);
 
   const recordCompletedSession = useCallback(
     (rounds: number, durationSec: number) => {
       if (rounds <= 0) return;
+      const newId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newRecord: SessionRecord = {
-        id: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: newId,
         timestamp: Date.now(),
         completedRounds: rounds,
         durationSeconds: Math.round(durationSec),
@@ -138,13 +144,28 @@ export default function App() {
       };
       const updated = saveHistoryRecord(newRecord);
       setHistory(updated);
+      setCompletedSessionId(newId);
     },
     [selectedLevel]
+  );
+
+  const handleUpdateSessionNote = useCallback((sessionId: string, note: string) => {
+    const updated = updateSessionNote(sessionId, note);
+    setHistory(updated);
+  }, []);
+
+  const handleSaveCurrentSessionNote = useCallback(
+    (note: string) => {
+      if (!completedSessionId) return;
+      handleUpdateSessionNote(completedSessionId, note);
+    },
+    [completedSessionId, handleUpdateSessionNote]
   );
 
   const handleClearHistory = useCallback(() => {
     clearStoredHistory();
     setHistory([]);
+    setCompletedSessionId(null);
   }, []);
 
   const handleLoadSampleData = useCallback(() => {
@@ -170,15 +191,9 @@ export default function App() {
   }, []);
 
   // Timeline state
-  const [timeline, setTimeline] = useState<SessionTimelineState>({
-    completedRounds: 0,
-    currentPhase: 'inhale',
-    secondsRemainingInPhase: selectedLevel.secondsPerPhase,
-    phaseProgress: 0,
-    totalProgress: 0,
-    isSessionCompleted: false,
-    totalElapsedSeconds: 0,
-  });
+  const [timeline, setTimeline] = useState<SessionTimelineState>(() =>
+    resolveSessionTimeline(0, BREATHING_LEVELS[0], 5)
+  );
 
   // Accurate timekeeper refs
   const accumulatedMsRef = useRef<number>(0);
@@ -202,7 +217,7 @@ export default function App() {
 
     const nextState = resolveSessionTimeline(
       totalElapsedMs,
-      selectedLevel.secondsPerPhase,
+      selectedLevel,
       totalRounds
     );
 
@@ -225,7 +240,7 @@ export default function App() {
 
     animationFrameRef.current = requestAnimationFrame(runTimerLoop);
   }, [
-    selectedLevel.secondsPerPhase,
+    selectedLevel,
     totalRounds,
     soundEnabled,
     cancelTimerLoop,
@@ -277,35 +292,30 @@ export default function App() {
     lastChimedPhaseRef.current = null;
     setStatus('idle');
     setShowCompletionModal(false);
-    setTimeline({
-      completedRounds: 0,
-      currentPhase: 'inhale',
-      secondsRemainingInPhase: selectedLevel.secondsPerPhase,
-      phaseProgress: 0,
-      totalProgress: 0,
-      isSessionCompleted: false,
-      totalElapsedSeconds: 0,
-    });
+    setTimeline(resolveSessionTimeline(0, selectedLevel, totalRounds));
   }, [
     cancelTimerLoop,
     status,
     timeline.completedRounds,
     timeline.totalElapsedSeconds,
     recordCompletedSession,
-    selectedLevel.secondsPerPhase,
+    selectedLevel,
+    totalRounds,
   ]);
 
   // Level Selection
   const handleSelectLevel = useCallback(
     (level: LevelConfig) => {
-      handleReset();
+      cancelTimerLoop();
+      accumulatedMsRef.current = 0;
+      startTimestampRef.current = null;
+      lastChimedPhaseRef.current = null;
+      setStatus('idle');
+      setShowCompletionModal(false);
       setSelectedLevel(level);
-      setTimeline((prev) => ({
-        ...prev,
-        secondsRemainingInPhase: level.secondsPerPhase,
-      }));
+      setTimeline(resolveSessionTimeline(0, level, totalRounds));
     },
-    [handleReset]
+    [cancelTimerLoop, totalRounds]
   );
 
   // Target Rounds Change
@@ -331,7 +341,7 @@ export default function App() {
           const totalElapsedMs = accumulatedMsRef.current + currentRunMs;
           const nextState = resolveSessionTimeline(
             totalElapsedMs,
-            selectedLevel.secondsPerPhase,
+            selectedLevel,
             totalRounds
           );
           setTimeline(nextState);
@@ -352,7 +362,7 @@ export default function App() {
     };
   }, [
     status,
-    selectedLevel.secondsPerPhase,
+    selectedLevel,
     totalRounds,
     soundEnabled,
     cancelTimerLoop,
@@ -449,6 +459,8 @@ export default function App() {
         ambientVolume={ambientVolume}
         onChangeAmbientVolume={handleChangeAmbientVolume}
         isAmbientPlaying={shouldPlayAmbient(ambientSound, status)}
+        is3DMode={is3DMode}
+        onToggle3DMode={() => setIs3DMode((prev) => !prev)}
       />
 
       {/* Main Content Dashboard */}
@@ -476,7 +488,21 @@ export default function App() {
             currentRound={timeline.completedRounds}
             totalRounds={totalRounds}
             secondsPerPhase={selectedLevel.secondsPerPhase}
+            level={selectedLevel}
           />
+
+          {/* Quick Launch 3D Breath Sanctuary Button */}
+          <div className="w-full flex justify-center mt-2 mb-1">
+            <button
+              type="button"
+              onClick={() => setIs3DMode(true)}
+              aria-label="Switch to 3D Breath Sanctuary"
+              className="px-4 py-1.5 rounded-full bg-gradient-to-r from-teal-500/15 via-cyan-500/15 to-indigo-500/15 hover:from-teal-500/25 hover:to-indigo-500/25 border border-teal-500/40 hover:border-teal-400 text-teal-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm group"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-teal-300 group-hover:rotate-12 transition-transform" aria-hidden="true" />
+              <span>Enter 3D Breath Sanctuary</span>
+            </button>
+          </div>
 
           {/* Controls */}
           <div className="w-full mt-3">
@@ -484,6 +510,7 @@ export default function App() {
               status={status}
               totalRounds={totalRounds}
               secondsPerPhase={selectedLevel.secondsPerPhase}
+              selectedLevel={selectedLevel}
               onStart={handleStart}
               onPause={handlePause}
               onResume={handleResume}
@@ -510,6 +537,13 @@ export default function App() {
             history={history}
             onClearHistory={handleClearHistory}
             onLoadSampleData={handleLoadSampleData}
+            onUpdateSessionNote={handleUpdateSessionNote}
+            onStartBreathing={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              if (status !== 'running') {
+                handleStart();
+              }
+            }}
           />
         </div>
 
@@ -529,6 +563,7 @@ export default function App() {
         <Instructions
           currentPhase={timeline.currentPhase}
           isRunning={status === 'running'}
+          level={selectedLevel}
         />
       </main>
 
@@ -545,11 +580,37 @@ export default function App() {
           </span>
           <span aria-hidden="true" className="text-slate-700">·</span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono text-[10px]">1-4</kbd> Levels
+            <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300 font-mono text-[10px]">1-8</kbd> Patterns
           </span>
         </div>
-        <p>Box Breathing · 4-Phase Guided Cadence for Calm & Mental Clarity</p>
+        <p>Mindful Breathing · Box Breathing, 4-7-8, Resonant, Viloma & Ujjayi Guided Cadences</p>
       </footer>
+
+      {/* Immersive Three.js 3D Breath Sanctuary Overlay */}
+      {is3DMode && (
+        <ThreeBreathingSanctuary
+          currentPhase={timeline.currentPhase}
+          secondsRemaining={timeline.secondsRemainingInPhase}
+          phaseProgress={timeline.phaseProgress}
+          status={status}
+          currentRound={timeline.completedRounds}
+          totalRounds={totalRounds}
+          level={selectedLevel}
+          soundEnabled={soundEnabled}
+          onToggleSound={() => setSoundEnabled((prev) => !prev)}
+          ambientSound={ambientSound}
+          onSelectAmbientSound={handleSelectAmbientSound}
+          ambientVolume={ambientVolume}
+          onChangeAmbientVolume={handleChangeAmbientVolume}
+          onStart={handleStart}
+          onPause={handlePause}
+          onResume={handleResume}
+          onReset={handleReset}
+          onSelectLevel={handleSelectLevel}
+          onChangeTotalRounds={handleChangeTotalRounds}
+          onExit3D={() => setIs3DMode(false)}
+        />
+      )}
 
       {/* Modals */}
       <CompletionModal
@@ -557,6 +618,9 @@ export default function App() {
         totalRounds={totalRounds}
         totalDurationSeconds={timeline.totalElapsedSeconds}
         level={selectedLevel}
+        sessionId={completedSessionId}
+        initialNote={history.find((s) => s.id === completedSessionId)?.note || ''}
+        onSaveNote={handleSaveCurrentSessionNote}
         onRestart={handleStart}
         onSelectAnotherLevel={() => {
           setShowCompletionModal(false);

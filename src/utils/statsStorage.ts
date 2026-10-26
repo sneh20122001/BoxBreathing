@@ -1,4 +1,4 @@
-import { AllTimeStats, DayActivity, SessionRecord, WeeklyStat } from '../types/stats';
+import { AllTimeStats, DayActivity, SessionRecord, WeeklyStat, HistoryBackupPayload } from '../types/stats';
 
 export const STATS_STORAGE_KEY = 'box_breathing_history';
 
@@ -300,6 +300,44 @@ export function clearStoredHistory(): void {
 }
 
 /**
+ * Pure function to attach or update a reflection note on a list of session records.
+ */
+export function applySessionNote(
+  sessions: SessionRecord[],
+  sessionId: string,
+  note: string
+): SessionRecord[] {
+  const cleanNote = note.trim();
+  return sessions.map((s) => {
+    if (s.id === sessionId) {
+      if (cleanNote) {
+        return { ...s, note: cleanNote };
+      } else {
+        const { note: _removed, ...rest } = s;
+        return rest;
+      }
+    }
+    return s;
+  });
+}
+
+/**
+ * Attach or update a reflection note on a specific session record in localStorage.
+ */
+export function updateSessionNote(sessionId: string, note: string): SessionRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const existing = getStoredHistory();
+    const updated = applySessionNote(existing, sessionId, note);
+    localStorage.setItem(STATS_STORAGE_KEY, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Failed to update session note in localStorage', err);
+    return [];
+  }
+}
+
+/**
  * Generate rich, realistic sample history across the last 3 weeks
  * to allow instant preview and exploration.
  */
@@ -309,17 +347,17 @@ export function generateSampleHistory(referenceDate: Date = new Date()): Session
 
   // 14 days of realistic sessions across 3 calendar weeks
   const offsets = [
-    { daysAgo: 0, rounds: 5, secs: 100, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
-    { daysAgo: 0, rounds: 3, secs: 84, levelId: 2, levelName: 'Level 2', phaseSec: 7 },
-    { daysAgo: 1, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7 },
-    { daysAgo: 2, rounds: 8, secs: 160, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
-    { daysAgo: 3, rounds: 5, secs: 180, levelId: 3, levelName: 'Level 3', phaseSec: 9 },
-    { daysAgo: 5, rounds: 5, secs: 100, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
-    { daysAgo: 7, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7 },
-    { daysAgo: 8, rounds: 10, secs: 200, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
-    { daysAgo: 10, rounds: 5, secs: 180, levelId: 3, levelName: 'Level 3', phaseSec: 9 },
+    { daysAgo: 0, rounds: 5, secs: 100, levelId: 1, levelName: 'Level 1', phaseSec: 5, note: 'Felt deep stillness in the chest and clear mental focus.' },
+    { daysAgo: 0, rounds: 3, secs: 84, levelId: 2, levelName: 'Level 2', phaseSec: 7, note: 'Slowed down after a busy afternoon meeting.' },
+    { daysAgo: 1, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7, note: 'Shoulder tension melted away around round 3.' },
+    { daysAgo: 2, rounds: 8, secs: 160, levelId: 1, levelName: 'Level 1', phaseSec: 5, note: 'Smooth rhythm throughout, very peaceful.' },
+    { daysAgo: 3, rounds: 5, secs: 180, levelId: 3, levelName: 'Level 3', phaseSec: 9, note: 'Holds felt expansive and meditative.' },
+    { daysAgo: 5, rounds: 5, secs: 100, levelId: 1, levelName: 'Level 1', phaseSec: 5, note: 'Quick morning centering practice.' },
+    { daysAgo: 7, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7, note: 'Calming wind-down before sleep.' },
+    { daysAgo: 8, rounds: 10, secs: 200, levelId: 1, levelName: 'Level 1', phaseSec: 5, note: 'Longer session felt grounding and refreshing.' },
+    { daysAgo: 10, rounds: 5, secs: 180, levelId: 3, levelName: 'Level 3', phaseSec: 9, note: 'Good lung expansion on 9s holds.' },
     { daysAgo: 12, rounds: 5, secs: 100, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
-    { daysAgo: 15, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7 },
+    { daysAgo: 15, rounds: 5, secs: 140, levelId: 2, levelName: 'Level 2', phaseSec: 7, note: 'Midday reset during high stress.' },
     { daysAgo: 18, rounds: 8, secs: 160, levelId: 1, levelName: 'Level 1', phaseSec: 5 },
   ];
 
@@ -336,8 +374,80 @@ export function generateSampleHistory(referenceDate: Date = new Date()): Session
       levelId: item.levelId,
       levelName: item.levelName,
       secondsPerPhase: item.phaseSec,
+      ...(item.note ? { note: item.note } : {}),
     });
   });
 
   return sample;
 }
+
+/**
+ * Builds a structured, portable backup payload containing the user's
+ * complete breathing session history along with summary metadata.
+ */
+export function buildHistoryBackupPayload(
+  history: SessionRecord[],
+  exportDate: Date = new Date()
+): HistoryBackupPayload {
+  const totalRounds = history.reduce((sum, s) => sum + (s.completedRounds || 0), 0);
+  const totalDurationSeconds = history.reduce((sum, s) => sum + (s.durationSeconds || 0), 0);
+  const totalMindfulMinutes = parseFloat((totalDurationSeconds / 60).toFixed(1));
+
+  return {
+    version: 1,
+    appName: 'Box Breathing & Mindful Cadence',
+    exportedAt: exportDate.toISOString(),
+    totalSessions: history.length,
+    totalDurationSeconds,
+    totalMindfulMinutes,
+    totalRounds,
+    sessions: history,
+  };
+}
+
+/**
+ * Generates an informative backup filename formatted as:
+ * mindful-breath-history-YYYY-MM-DD.json
+ */
+export function generateBackupFilename(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `mindful-breath-history-${y}-${m}-${d}.json`;
+}
+
+/**
+ * Triggers a client-side download of the user's session history as a JSON file.
+ */
+export function downloadHistoryJson(
+  history: SessionRecord[],
+  date: Date = new Date()
+): boolean {
+  if (typeof window === 'undefined' || !window.document) return false;
+
+  try {
+    const payload = buildHistoryBackupPayload(history, date);
+    const jsonString = JSON.stringify(payload, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const filename = generateBackupFilename(date);
+
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
+
+    return true;
+  } catch (err) {
+    console.error('Failed to export breath history as JSON:', err);
+    return false;
+  }
+}
+

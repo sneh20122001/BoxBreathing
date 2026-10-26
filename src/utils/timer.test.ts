@@ -124,3 +124,187 @@ test('resolveSessionTimeline marks completed at total duration without negative 
   assert.equal(overshoot.completedRounds, 5);
   assert.equal(overshoot.secondsRemainingInPhase, 0);
 });
+
+test('4-7-8 breathing calculates round and session durations accurately', () => {
+  const durations = { inhale: 4, hold1: 7, exhale: 8, hold2: 0 };
+  const roundSec = calculateRoundDuration(durations);
+  assert.equal(roundSec, 19); // 4 + 7 + 8 = 19s
+  const sessionSec = calculateTotalSessionSeconds(durations, 4);
+  assert.equal(sessionSec, 76); // 19 * 4 = 76s
+  assert.equal(formatTimeMinutesSeconds(sessionSec), '1m 16s');
+});
+
+test('4-7-8 breathing resolves timeline through 3 active phases and skips 0s hold2', () => {
+  const durations = { inhale: 4, hold1: 7, exhale: 8, hold2: 0 };
+  
+  // At 2s into Inhale (4s duration)
+  const t1 = resolveSessionTimeline(2000, durations, 3);
+  assert.equal(t1.currentPhase, 'inhale');
+  assert.equal(t1.secondsRemainingInPhase, 2);
+  assert.equal(t1.completedRounds, 0);
+
+  // At 5s (1s into Hold1, 7s duration)
+  const t2 = resolveSessionTimeline(5000, durations, 3);
+  assert.equal(t2.currentPhase, 'hold1');
+  assert.equal(t2.secondsRemainingInPhase, 6);
+  assert.equal(t2.completedRounds, 0);
+
+  // At 14s (3s into Exhale, 8s duration: 4s inhale + 7s hold1 + 3s exhale = 14s)
+  const t3 = resolveSessionTimeline(14000, durations, 3);
+  assert.equal(t3.currentPhase, 'exhale');
+  assert.equal(t3.secondsRemainingInPhase, 5);
+  assert.equal(t3.completedRounds, 0);
+
+  // At exactly 19s (round boundary), completes Round 1 and seamlessly starts Round 2 Inhale
+  const t4 = resolveSessionTimeline(19000, durations, 3);
+  assert.equal(t4.completedRounds, 1);
+  assert.equal(t4.currentPhase, 'inhale');
+  assert.equal(t4.secondsRemainingInPhase, 4);
+
+  // At 57s (all 3 rounds completed: 19 * 3 = 57s)
+  const t5 = resolveSessionTimeline(57000, durations, 3);
+  assert.equal(t5.isSessionCompleted, true);
+  assert.equal(t5.completedRounds, 3);
+  assert.equal(t5.currentPhase, 'exhale'); // last active phase
+  assert.equal(t5.secondsRemainingInPhase, 0);
+});
+
+test('Resonant breathing (5.5s in, 5.5s out) calculates round duration and handles fractional seconds', () => {
+  const resonantDurations = { inhale: 5.5, hold1: 0, exhale: 5.5, hold2: 0 };
+  const roundSec = calculateRoundDuration(resonantDurations);
+  assert.equal(roundSec, 11); // 5.5 + 5.5 = 11s
+  const sessionSec = calculateTotalSessionSeconds(resonantDurations, 5);
+  assert.equal(sessionSec, 55); // 11 * 5 = 55s
+  assert.equal(formatTimeMinutesSeconds(sessionSec), '55s');
+});
+
+test('Resonant breathing cycles smoothly between Inhale and Exhale with no holds', () => {
+  const resonantDurations = { inhale: 5.5, hold1: 0, exhale: 5.5, hold2: 0 };
+
+  // At start (0ms)
+  const t0 = resolveSessionTimeline(0, resonantDurations, 5);
+  assert.equal(t0.currentPhase, 'inhale');
+  assert.equal(t0.secondsRemainingInPhase, 5.5);
+  assert.equal(t0.completedRounds, 0);
+
+  // At 3000ms (3.0s into 5.5s Inhale -> 2.5s remaining)
+  const t1 = resolveSessionTimeline(3000, resonantDurations, 5);
+  assert.equal(t1.currentPhase, 'inhale');
+  assert.equal(t1.secondsRemainingInPhase, 2.5);
+  assert.equal(t1.completedRounds, 0);
+
+  // At 6000ms (5.5s inhale completed, 0.5s into 5.5s Exhale -> 5.0s remaining)
+  const t2 = resolveSessionTimeline(6000, resonantDurations, 5);
+  assert.equal(t2.currentPhase, 'exhale');
+  assert.equal(t2.secondsRemainingInPhase, 5.0);
+  assert.equal(t2.completedRounds, 0);
+
+  // At exactly 11000ms (1 full round completed -> starts Round 2 Inhale)
+  const t3 = resolveSessionTimeline(11000, resonantDurations, 5);
+  assert.equal(t3.completedRounds, 1);
+  assert.equal(t3.currentPhase, 'inhale');
+  assert.equal(t3.secondsRemainingInPhase, 5.5);
+
+  // At 55000ms (5 full rounds completed)
+  const t4 = resolveSessionTimeline(55000, resonantDurations, 5);
+  assert.equal(t4.isSessionCompleted, true);
+  assert.equal(t4.completedRounds, 5);
+  assert.equal(t4.currentPhase, 'exhale');
+  assert.equal(t4.secondsRemainingInPhase, 0);
+});
+
+test('getNextPhase respects active phases for 4-7-8 and Resonant breathing', () => {
+  const resonantDurations = { inhale: 5.5, hold1: 0, exhale: 5.5, hold2: 0 };
+  const p1 = getNextPhase('inhale', resonantDurations);
+  assert.equal(p1.nextPhase, 'exhale');
+  assert.equal(p1.isRoundComplete, false);
+
+  const p2 = getNextPhase('exhale', resonantDurations);
+  assert.equal(p2.nextPhase, 'inhale');
+  assert.equal(p2.isRoundComplete, true);
+
+  const durations478 = { inhale: 4, hold1: 7, exhale: 8, hold2: 0 };
+  const a1 = getNextPhase('inhale', durations478);
+  assert.equal(a1.nextPhase, 'hold1');
+  assert.equal(a1.isRoundComplete, false);
+
+  const a2 = getNextPhase('hold1', durations478);
+  assert.equal(a2.nextPhase, 'exhale');
+  assert.equal(a2.isRoundComplete, false);
+
+  const a3 = getNextPhase('exhale', durations478);
+  assert.equal(a3.nextPhase, 'inhale');
+  assert.equal(a3.isRoundComplete, true);
+});
+
+test('Viloma interrupted breathing calculates round and session durations accurately', () => {
+  const vilomaDurations = { inhale: 4, hold1: 2, exhale: 6, hold2: 2 };
+  const roundSec = calculateRoundDuration(vilomaDurations);
+  assert.equal(roundSec, 14); // 4 + 2 + 6 + 2 = 14s
+  const sessionSec = calculateTotalSessionSeconds(vilomaDurations, 5);
+  assert.equal(sessionSec, 70); // 14 * 5 = 70s
+  assert.equal(formatTimeMinutesSeconds(sessionSec), '1m 10s');
+});
+
+test('Viloma interrupted breathing resolves timeline across all 4 stepped phases', () => {
+  const vilomaDurations = { inhale: 4, hold1: 2, exhale: 6, hold2: 2 };
+
+  // At 2s (Inhale 4s)
+  const t1 = resolveSessionTimeline(2000, vilomaDurations, 5);
+  assert.equal(t1.currentPhase, 'inhale');
+  assert.equal(t1.secondsRemainingInPhase, 2);
+
+  // At 5s (Hold1 2s: from 4s to 6s)
+  const t2 = resolveSessionTimeline(5000, vilomaDurations, 5);
+  assert.equal(t2.currentPhase, 'hold1');
+  assert.equal(t2.secondsRemainingInPhase, 1);
+
+  // At 9s (Exhale 6s: from 6s to 12s)
+  const t3 = resolveSessionTimeline(9000, vilomaDurations, 5);
+  assert.equal(t3.currentPhase, 'exhale');
+  assert.equal(t3.secondsRemainingInPhase, 3);
+
+  // At 13s (Hold2 2s: from 12s to 14s)
+  const t4 = resolveSessionTimeline(13000, vilomaDurations, 5);
+  assert.equal(t4.currentPhase, 'hold2');
+  assert.equal(t4.secondsRemainingInPhase, 1);
+
+  // At exactly 14000ms (1 full round completed -> starts Round 2 Inhale)
+  const t5 = resolveSessionTimeline(14000, vilomaDurations, 5);
+  assert.equal(t5.completedRounds, 1);
+  assert.equal(t5.currentPhase, 'inhale');
+  assert.equal(t5.secondsRemainingInPhase, 4);
+});
+
+test('Ujjayi ocean breath calculates round and session durations accurately', () => {
+  const ujjayiDurations = { inhale: 6, hold1: 0, exhale: 6, hold2: 0 };
+  const roundSec = calculateRoundDuration(ujjayiDurations);
+  assert.equal(roundSec, 12); // 6 + 6 = 12s
+  const sessionSec = calculateTotalSessionSeconds(ujjayiDurations, 5);
+  assert.equal(sessionSec, 60); // 12 * 5 = 60s
+  assert.equal(formatTimeMinutesSeconds(sessionSec), '1m');
+});
+
+test('Ujjayi ocean breath cycles smoothly between Inhale and Exhale', () => {
+  const ujjayiDurations = { inhale: 6, hold1: 0, exhale: 6, hold2: 0 };
+
+  // Inhale transition to Exhale
+  const p1 = getNextPhase('inhale', ujjayiDurations);
+  assert.equal(p1.nextPhase, 'exhale');
+  assert.equal(p1.isRoundComplete, false);
+
+  // Exhale transition back to Inhale with round complete
+  const p2 = getNextPhase('exhale', ujjayiDurations);
+  assert.equal(p2.nextPhase, 'inhale');
+  assert.equal(p2.isRoundComplete, true);
+
+  // At 3s into Inhale
+  const t1 = resolveSessionTimeline(3000, ujjayiDurations, 5);
+  assert.equal(t1.currentPhase, 'inhale');
+  assert.equal(t1.secondsRemainingInPhase, 3);
+
+  // At 9s into Exhale (from 6s to 12s)
+  const t2 = resolveSessionTimeline(9000, ujjayiDurations, 5);
+  assert.equal(t2.currentPhase, 'exhale');
+  assert.equal(t2.secondsRemainingInPhase, 3);
+});

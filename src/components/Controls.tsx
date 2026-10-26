@@ -1,12 +1,13 @@
 import React from 'react';
 import { Play, Pause, RotateCcw, Clock, Target } from 'lucide-react';
-import { SessionStatus } from '../types/breathing';
-import { formatTimeMinutesSeconds } from '../utils/timerLogic';
+import { LevelConfig, SessionStatus } from '../types/breathing';
+import { calculateRoundDuration, formatTimeMinutesSeconds } from '../utils/timerLogic';
 
 interface ControlsProps {
   status: SessionStatus;
   totalRounds: number;
   secondsPerPhase: number;
+  selectedLevel?: LevelConfig;
   onStart: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -18,6 +19,7 @@ export const Controls: React.FC<ControlsProps> = ({
   status,
   totalRounds,
   secondsPerPhase,
+  selectedLevel,
   onStart,
   onPause,
   onResume,
@@ -29,7 +31,8 @@ export const Controls: React.FC<ControlsProps> = ({
   const isIdle = status === 'idle';
   const isCompleted = status === 'completed';
 
-  const totalSessionSeconds = secondsPerPhase * 4 * totalRounds;
+  const roundDuration = selectedLevel ? calculateRoundDuration(selectedLevel) : secondsPerPhase * 4;
+  const totalSessionSeconds = roundDuration * totalRounds;
   const formattedDuration = formatTimeMinutesSeconds(totalSessionSeconds);
 
   const roundPresets = [1, 3, 5, 8, 10];

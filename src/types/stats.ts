@@ -6,6 +6,7 @@ export interface SessionRecord {
   levelId: number;
   levelName: string;
   secondsPerPhase: number;
+  note?: string; // Short text reflection or state of mind
 }
 
 export interface DayActivity {
@@ -37,3 +38,15 @@ export interface AllTimeStats {
   currentStreakDays: number;
   bestDay: { dateStr: string; rounds: number } | null;
 }
+
+export interface HistoryBackupPayload {
+  version: number;
+  appName: string;
+  exportedAt: string;
+  totalSessions: number;
+  totalDurationSeconds: number;
+  totalMindfulMinutes: number;
+  totalRounds: number;
+  sessions: SessionRecord[];
+}
+

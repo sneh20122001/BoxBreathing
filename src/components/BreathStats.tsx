@@ -12,27 +12,49 @@ import {
   TrendingUp,
   Activity,
   Layers,
+  MessageSquare,
+  PenLine,
+  Check,
+  Download,
 } from 'lucide-react';
 import { SessionRecord, WeeklyStat } from '../types/stats';
 import {
   aggregateWeeklyStats,
   calculateAllTimeStats,
   formatMinutesDisplay,
+  downloadHistoryJson,
 } from '../utils/statsStorage';
+import { DailyGoals } from './DailyGoals';
+import { Achievements } from './Achievements';
 
 interface BreathStatsProps {
   history: SessionRecord[];
   onClearHistory: () => void;
   onLoadSampleData: () => void;
+  onStartBreathing?: () => void;
+  onUpdateSessionNote?: (sessionId: string, note: string) => void;
 }
 
 export const BreathStats: React.FC<BreathStatsProps> = ({
   history,
   onClearHistory,
   onLoadSampleData,
+  onStartBreathing,
+  onUpdateSessionNote,
 }) => {
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+  const [editingNoteSessionId, setEditingNoteSessionId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState<string>('');
+  const [hasExported, setHasExported] = useState<boolean>(false);
+
+  const handleDownloadJson = () => {
+    const success = downloadHistoryJson(history);
+    if (success) {
+      setHasExported(true);
+      setTimeout(() => setHasExported(false), 2400);
+    }
+  };
 
   // Compute weekly and all-time stats
   const weeklyStats = aggregateWeeklyStats(history);
@@ -81,12 +103,44 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: Sample Data & Reset */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Action Buttons: Export JSON, Sample Data & Reset */}
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Download History JSON Backup Button */}
+          <button
+            type="button"
+            onClick={handleDownloadJson}
+            disabled={history.length === 0}
+            aria-label="Download session history as JSON backup file"
+            title={
+              history.length === 0
+                ? 'No session history to export yet'
+                : 'Download session history as JSON backup file'
+            }
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg border text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
+              history.length === 0
+                ? 'bg-slate-900/40 border-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                : hasExported
+                ? 'bg-teal-500/20 border-teal-500/50 text-teal-300'
+                : 'bg-slate-800/70 hover:bg-slate-800 border-slate-700/80 hover:border-teal-500/40 text-slate-300 hover:text-teal-200'
+            }`}
+          >
+            {hasExported ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
+                <span className="font-semibold text-teal-300">Downloaded JSON</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
+                <span>Export JSON</span>
+              </>
+            )}
+          </button>
+
           {history.length === 0 ? (
             <button
               onClick={onLoadSampleData}
-              className="px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+              className="px-3 py-1.5 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-300 text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
               title="Populate realistic demo sessions to preview stats"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -103,13 +157,13 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
                       setShowClearConfirm(false);
                       setSelectedWeekIndex(0);
                     }}
-                    className="px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-[11px] font-semibold transition-colors"
+                    className="px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                   >
                     Yes
                   </button>
                   <button
                     onClick={() => setShowClearConfirm(false)}
-                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-colors"
+                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -117,7 +171,7 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
               ) : (
                 <button
                   onClick={() => setShowClearConfirm(true)}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-400 hover:text-slate-200 text-xs transition-colors flex items-center gap-1"
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-400 hover:text-slate-200 text-xs transition-colors flex items-center gap-1 cursor-pointer"
                   title="Clear all stored sessions"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -128,6 +182,12 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
           )}
         </div>
       </div>
+
+      {/* Daily Goals Section */}
+      <DailyGoals
+        history={history}
+        onStartBreathing={onStartBreathing}
+      />
 
       {/* KPI Cards Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -207,6 +267,12 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Achievements & Milestones Section */}
+      <Achievements
+        history={history}
+        onStartBreathing={onStartBreathing}
+      />
 
       {/* Week-by-Week Interactive Selector & Breakdown */}
       <div className="rounded-xl bg-slate-950/60 border border-slate-800/90 p-4 sm:p-5 flex flex-col gap-4">
@@ -403,33 +469,116 @@ export const BreathStats: React.FC<BreathStatsProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
               Sessions in {currentSelectedWeek?.label}
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
               {selectedWeekSessions.map((session) => {
                 const date = new Date(session.timestamp);
                 const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                const isEditing = editingNoteSessionId === session.id;
 
                 return (
                   <div
                     key={session.id}
-                    className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs"
+                    className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 flex flex-col justify-between gap-2 text-xs"
                   >
-                    <div>
-                      <div className="font-medium text-slate-200">
-                        {session.levelName} ({session.secondsPerPhase}s)
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-slate-200">
+                          {session.levelName} ({session.secondsPerPhase}s)
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {dateStr} at {timeStr}
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {dateStr} at {timeStr}
+                      <div className="text-right">
+                        <div className="text-teal-300 font-semibold font-mono">
+                          {session.completedRounds} {session.completedRounds === 1 ? 'round' : 'rounds'}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          {formatMinutesDisplay(session.durationSeconds)}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-teal-300 font-semibold font-mono">
-                        {session.completedRounds} {session.completedRounds === 1 ? 'round' : 'rounds'}
+
+                    {/* Breath Notes reflection or inline edit mode */}
+                    {isEditing ? (
+                      <div className="pt-2 border-t border-slate-800/80 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400">
+                          <span className="flex items-center gap-1 font-medium text-teal-300">
+                            <PenLine className="w-3 h-3" />
+                            <span>Breath Note</span>
+                          </span>
+                          <span className="font-mono text-[10px]">{editingNoteText.length}/240</span>
+                        </div>
+                        <textarea
+                          rows={2}
+                          maxLength={240}
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          placeholder="How did you feel during/after this practice?"
+                          className="w-full rounded-md bg-slate-950 border border-slate-700 p-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-teal-400 focus:ring-1 focus:ring-teal-400 outline-none resize-none"
+                          autoFocus
+                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNoteSessionId(null)}
+                            className="px-2 py-0.5 rounded text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateSessionNote?.(session.id, editingNoteText);
+                              setEditingNoteSessionId(null);
+                            }}
+                            className="px-2.5 py-0.5 rounded bg-teal-500 hover:bg-teal-400 text-slate-950 font-semibold text-[11px] flex items-center gap-1 transition-colors"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Save</span>
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        {formatMinutesDisplay(session.durationSeconds)}
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        {session.note ? (
+                          <div className="pt-2 border-t border-slate-800/80 flex items-start justify-between gap-2 group">
+                            <div className="flex items-start gap-1.5 text-[11px] text-teal-200/90 italic leading-relaxed">
+                              <MessageSquare className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
+                              <span>“{session.note}”</span>
+                            </div>
+                            {onUpdateSessionNote && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingNoteSessionId(session.id);
+                                  setEditingNoteText(session.note || '');
+                                }}
+                                className="opacity-40 group-hover:opacity-100 hover:text-teal-300 transition-opacity text-slate-400 p-0.5 shrink-0"
+                                title="Edit reflection note"
+                              >
+                                <PenLine className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ) : onUpdateSessionNote ? (
+                          <div className="pt-1.5 border-t border-slate-800/40">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingNoteSessionId(session.id);
+                                setEditingNoteText('');
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-teal-300 flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <PenLine className="w-2.5 h-2.5 text-teal-400/80" />
+                              <span>Add breath note</span>
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 );
               })}

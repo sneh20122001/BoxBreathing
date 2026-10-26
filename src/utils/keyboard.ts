@@ -29,6 +29,10 @@ export function resolveKeyboardShortcut(
   if (key === '2') return { type: 'SET_LEVEL', levelIndex: 1 };
   if (key === '3') return { type: 'SET_LEVEL', levelIndex: 2 };
   if (key === '4') return { type: 'SET_LEVEL', levelIndex: 3 };
+  if (key === '5') return { type: 'SET_LEVEL', levelIndex: 4 };
+  if (key === '6') return { type: 'SET_LEVEL', levelIndex: 5 };
+  if (key === '7') return { type: 'SET_LEVEL', levelIndex: 6 };
+  if (key === '8') return { type: 'SET_LEVEL', levelIndex: 7 };
 
   return null;
 }
